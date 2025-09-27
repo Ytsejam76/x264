@@ -458,6 +458,7 @@ REALIGN_STACK void x264_param_default( x264_param_t *param )
     param->analyse.b_psnr = 0;
     param->analyse.b_ssim = 0;
 
+    param->analyse.b_pskip_bypass = 0;
     param->i_cqm_preset = X264_CQM_FLAT;
     memset( param->cqm_4iy, 16, sizeof( param->cqm_4iy ) );
     memset( param->cqm_4py, 16, sizeof( param->cqm_4py ) );
@@ -1297,6 +1298,8 @@ REALIGN_STACK int x264_param_parse( x264_param_t *p, const char *name, const cha
         p->analyse.i_trellis = atoi(value);
     OPT("fast-pskip")
         p->analyse.b_fast_pskip = atobool(value);
+    OPT("pskip-bypass")
+        p->analyse.b_pskip_bypass = atobool(value);
     OPT("dct-decimate")
         p->analyse.b_dct_decimate = atobool(value);
     OPT("deadzone-inter")

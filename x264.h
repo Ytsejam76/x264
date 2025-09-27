@@ -431,6 +431,7 @@ typedef struct x264_param_t
 
         int          b_mb_info;            /* Use input mb_info data in x264_picture_t */
         int          b_mb_info_update; /* Update the values in mb_info according to the results of encoding. */
+        int          b_pskip_bypass; /* allow mb_info to force P_SKIP when MVP==0 */
 
         /* the deadzone size that will be used in luma quantization */
         int          i_luma_deadzone[2]; /* {inter, intra} */
@@ -908,6 +909,11 @@ typedef struct x264_picture_t
     void *opaque;
 } x264_picture_t;
 
+
+/* mb_info flag: force P_SKIP on this MB */
+#ifndef X264_MBINFO_PERFECT_P_SKIP
+#define X264_MBINFO_PERFECT_P_SKIP (1u << 1)
+#endif
 /* x264_picture_init:
  *  initialize an x264_picture_t.  Needs to be done if the calling application
  *  allocates its own x264_picture_t as opposed to using x264_picture_alloc. */

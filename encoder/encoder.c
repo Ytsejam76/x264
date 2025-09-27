@@ -1552,6 +1552,10 @@ x264_t *x264_encoder_open( x264_param_t *param, void *api )
     if( validate_parameters( h, 1 ) < 0 )
         goto fail;
 
+    /* Log P_SKIP bypass status */
+    x264_log( h, X264_LOG_INFO, "P_SKIP bypass: %s\n", 
+              h->param.analyse.b_pskip_bypass ? "enabled" : "disabled" );
+
     if( h->param.psz_cqm_file )
         if( x264_cqm_parse_file( h, h->param.psz_cqm_file ) < 0 )
             goto fail;
@@ -3453,6 +3457,16 @@ int     x264_encoder_encode( x264_t *h,
     /* 4: get picture to encode */
     h->fenc = x264_frame_shift( h->frames.current );
 
+
+    /* Scrub FORCE_P_SKIP flags once per frame if B-frames are enabled */
+    if( h->param.analyse.b_pskip_bypass && h->param.i_bframe > 0 && h->fenc && h->fenc->mb_info )
+    {
+        int mbw = h->mb.i_mb_width;
+        int mbh = h->mb.i_mb_height;
+        int mbn = mbw * mbh;
+        for( int i = 0; i < mbn; i++ )
+            h->fenc->mb_info[i] &= ~X264_MBINFO_PERFECT_P_SKIP;
+    }
     /* If applicable, wait for previous frame reconstruction to finish */
     if( h->param.b_sliced_threads )
         if( threadpool_wait_all( h ) < 0 )

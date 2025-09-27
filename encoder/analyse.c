@@ -2930,6 +2930,39 @@ void x264_macroblock_analyse( x264_t *h )
         h->fdec->effective_qp[h->mb.i_mb_xy] = h->mb.i_qp; /* Store the real analysis QP. */
     mb_analyse_init( h, &analysis, h->mb.i_qp );
 
+
+    /* Hard P_SKIP bypass via mb_info (fast path).
+       Flags are scrubbed once per frame if B-frames are enabled.
+       If MVP==(0,0), emit P_SKIP; else emit P_L0 16x16 with mv=(0,0) and no residuals. */
+    if( h->sh.i_type == SLICE_TYPE_P && h->param.analyse.b_pskip_bypass && h->fenc->mb_info
+        && (h->fenc->mb_info[h->mb.i_mb_xy] & X264_MBINFO_PERFECT_P_SKIP) )
+    {
+        int16_t mvp[2] = {0,0};
+        x264_mb_predict_mv_16x16( h, 0, 0, mvp );
+
+        for( int i = 0; i < 24; i++ )
+        {
+            const int idx = x264_scan8[i];
+            h->mb.cache.non_zero_count[idx] = 0;
+            h->mb.cache.ref[0][idx] = 0;
+            h->mb.cache.mv[0][idx][0] = 0;
+            h->mb.cache.mv[0][idx][1] = 0;
+        }
+        h->mb.i_cbp_luma   = 0;
+        h->mb.i_cbp_chroma = 0;
+
+        if( mvp[0] == 0 && mvp[1] == 0 )
+        {
+            h->mb.i_type      = P_SKIP;
+            h->mb.i_partition = D_16x16;
+        }
+        else
+        {
+            h->mb.i_type      = P_L0;
+            h->mb.i_partition = D_16x16;
+        }
+        return;
+    }
     /*--------------------------- Do the analysis ---------------------------*/
     if( h->sh.i_type == SLICE_TYPE_I )
     {
