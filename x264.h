@@ -431,7 +431,7 @@ typedef struct x264_param_t
 
         int          b_mb_info;            /* Use input mb_info data in x264_picture_t */
         int          b_mb_info_update; /* Update the values in mb_info according to the results of encoding. */
-        int          b_pskip_bypass; /* allow mb_info to force P_SKIP when MVP==0 */
+        int          b_pskip_bypass; /* Enable analysis bypass for P_SKIP blocks indicated by mb_info */
 
         /* the deadzone size that will be used in luma quantization */
         int          i_luma_deadzone[2]; /* {inter, intra} */

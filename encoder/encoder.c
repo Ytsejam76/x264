@@ -2862,7 +2862,47 @@ static intptr_t slice_write( x264_t *h )
         else
             x264_macroblock_cache_load_progressive( h, i_mb_x, i_mb_y );
 
+        /* Ultra-fast P_SKIP bypass: Skip analysis entirely for flagged blocks */
+        if( h->param.analyse.b_pskip_bypass && h->fdec->mb_info && 
+            h->sh.i_type != SLICE_TYPE_I &&
+            (h->fdec->mb_info[h->mb.i_mb_xy] & X264_MBINFO_PERFECT_P_SKIP) )
+        {
+            /* Always compute MVP - no caching to avoid thread safety issues */
+            int16_t mvp[2];
+            x264_mb_predict_mv_pskip( h, mvp );
+            
+            if( mvp[0] == 0 && mvp[1] == 0 )
+            {
+                /* Perfect P_SKIP - minimal setup */
+                h->mb.i_type = P_SKIP;
+                h->mb.i_partition = D_16x16;
+                h->mb.i_cbp_luma = h->mb.i_cbp_chroma = 0;
+                h->mb.b_transform_8x8 = 0;
+                /* P_SKIP: zero coefficients implicit, clear cache for neighbors */
+                memset( h->mb.cache.non_zero_count, 0, sizeof( h->mb.cache.non_zero_count ) );
+            }
+            else
+            {
+                /* Fast P_L0 setup */
+                h->mb.i_type = P_L0;
+                h->mb.i_partition = D_16x16;
+                h->mb.i_cbp_luma = h->mb.i_cbp_chroma = 0;
+                h->mb.b_transform_8x8 = 0;
+                /* Explicit zero motion for P_L0 */
+                x264_macroblock_cache_ref( h, 0, 0, 4, 4, 0, 0 );
+                int16_t zero_mv[2] = {0, 0};
+                x264_macroblock_cache_mv_ptr( h, 0, 0, 4, 4, 0, zero_mv );
+                memset( h->mb.cache.non_zero_count, 0, sizeof( h->mb.cache.non_zero_count ) );
+            }
+            
+            /* Essential: Update spatial cache for neighboring blocks */
+            x264_macroblock_cache_save( h );
+            goto skip_analysis;
+        }
+
         x264_macroblock_analyse( h );
+
+skip_analysis:
 
         /* encode this macroblock -> be careful it can change the mb type to P_SKIP if needed */
 reencode:

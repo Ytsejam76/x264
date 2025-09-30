@@ -458,7 +458,9 @@ REALIGN_STACK void x264_param_default( x264_param_t *param )
     param->analyse.b_psnr = 0;
     param->analyse.b_ssim = 0;
 
-    param->analyse.b_pskip_bypass = 0;
+    param->analyse.b_pskip_bypass = 1;
+    param->analyse.b_mb_info = 1;
+    param->analyse.b_mb_info_update = 0;
     param->i_cqm_preset = X264_CQM_FLAT;
     memset( param->cqm_4iy, 16, sizeof( param->cqm_4iy ) );
     memset( param->cqm_4py, 16, sizeof( param->cqm_4py ) );
