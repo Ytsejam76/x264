@@ -423,6 +423,7 @@ typedef struct x264_param_t
         int          b_mixed_references; /* allow each mb partition to have its own reference number */
         int          i_trellis;  /* trellis RD quantization */
         int          b_fast_pskip; /* early SKIP detection on P-frames */
+        int          b_pskip_bypass; /* use mb_info-driven P_SKIP/P_L0 bypass */
         int          b_dct_decimate; /* transform coefficient thresholding on P-frames */
         int          i_noise_reduction; /* adaptive pseudo-deadzone */
         float        f_psy_rd; /* Psy RD strength */
@@ -844,6 +845,9 @@ typedef struct x264_image_properties_t
      *      Results for MBINFO_CONSTANT are currently only set for P-frames, and are not
      *      guaranteed to enumerate all blocks which haven't changed.  (There may be false
      *      negatives, but no false positives.)
+     *
+     *      MBINFO_PERFECT_P_SKIP is a stronger hint for P-slices. It marks macroblocks
+     *      that are safe for the custom P_SKIP fast path.
      */
     uint8_t *mb_info;
     /* In: optional callback to free mb_info when used. */
@@ -851,6 +855,8 @@ typedef struct x264_image_properties_t
 
     /* The macroblock is constant and remains unchanged from the previous frame. */
     #define X264_MBINFO_CONSTANT   (1U<<0)
+    /* Safe for the custom P_SKIP fast path. */
+    #define X264_MBINFO_PERFECT_P_SKIP (1U<<1)
     /* More flags may be added in the future. */
 
     /* Out: SSIM of the the frame luma (if x264_param_t.b_ssim is set) */

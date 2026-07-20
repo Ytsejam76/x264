@@ -1403,6 +1403,32 @@ static int validate_parameters( x264_t *h, int b_open )
     BOOLIFY( rc.b_filler );
 #undef BOOLIFY
 
+    /* The mb_info-driven perfect P_SKIP bypass is only proven safe for
+     * progressive, single-reference P-frames without weighted prediction:
+     * that regime guarantees the decoder's P_SKIP predictor is zero for hinted
+     * MBs (interior) and that ref0 is the immediately-preceding frame the
+     * oracle compared against. MBAFF remaps spatial neighbors and uses a
+     * field-aware predictor, weightp alters the reconstructed pixels, and
+     * multi-ref / B-frames break the ref-distance==1 assumption. Disable the
+     * bypass rather than emit an unverifiable (potentially undecodable) stream. */
+    if( h->param.analyse.b_pskip_bypass )
+    {
+        const char *reason = NULL;
+        if( PARAM_INTERLACED )
+            reason = "interlaced/MBAFF";
+        else if( h->param.analyse.i_weighted_pred > 0 )
+            reason = "weighted prediction";
+        else if( h->param.i_frame_reference > 1 )
+            reason = "multiple reference frames";
+        else if( h->param.i_bframe > 0 )
+            reason = "B-frames";
+        if( reason )
+        {
+            x264_log( h, X264_LOG_WARNING, "pskip bypass disabled (incompatible with %s)\n", reason );
+            h->param.analyse.b_pskip_bypass = 0;
+        }
+    }
+
     return 0;
 }
 
@@ -2857,12 +2883,94 @@ static intptr_t slice_write( x264_t *h )
             x264_macroblock_cache_load_interlaced( h, i_mb_x, i_mb_y );
         else
             x264_macroblock_cache_load_progressive( h, i_mb_x, i_mb_y );
+        int b_pskip_bypass_mb = 0;
+        int i_pskip_bypass_type = 0;
+        /* Ultra-fast P_SKIP bypass driven by mb_info.
+         * Interior blocks can skip directly when their already-encoded left/top
+         * neighbors are also marked static. The map is the oracle that this makes
+         * the decoder's P_SKIP predictor zero. Boundary blocks still encode as
+         * P_L0 with explicit zero motion, but skip promotion is disabled so they
+         * do not get collapsed back to P_SKIP before the oracle condition holds.
+         */
+        if( h->param.analyse.b_pskip_bypass && h->fdec->mb_info &&
+            h->sh.i_type == SLICE_TYPE_P &&
+            (h->fdec->mb_info[h->mb.i_mb_xy] & X264_MBINFO_PERFECT_P_SKIP) )
+        {
+            const int cur_mb_xy = h->mb.i_mb_xy;
+            const int mb_x  = h->mb.i_mb_x;
+            const int mb_y  = h->mb.i_mb_y;
+            const int mbw   = h->mb.i_mb_width;
+            const uint8_t *mb_info = h->fdec->mb_info;
+            const int left_static = mb_x > 0 &&
+                (mb_info[cur_mb_xy - 1] & X264_MBINFO_PERFECT_P_SKIP);
+            const int top_static = mb_y > 0 &&
+                (mb_info[cur_mb_xy - mbw] & X264_MBINFO_PERFECT_P_SKIP);
+            const int skip_invalid =
+                h->i_thread_frames > 1 && h->mb.cache.pskip_mv[1] > h->mb.mv_max_spel[1];
+            const int b_interior =
+                h->mb.b_allow_skip &&
+                !skip_invalid &&
+                ((mb_x == 0 && mb_y == 0) ||
+                 (mb_x == 0 && top_static) ||
+                 (mb_y == 0 && left_static) ||
+                 (mb_x > 0 && mb_y > 0 && left_static && top_static));
+            int16_t zero_mv[2] = {0, 0};
 
+            /* mb_analyse_init sets the per-row vertical MV clamp bounds (only at
+             * mb_x==0) and the per-MB horizontal bounds. This bypass skips the
+             * full analyse, so run just the init when the row begins with a
+             * bypassed MB; otherwise later normally-coded MBs in the row would
+             * be motion-compensated against stale bounds and desync the decoder. */
+            if( mb_x == 0 )
+                x264_macroblock_analyse_init( h );
+
+            h->mb.i_partition  = D_16x16;
+            h->mb.i_cbp_luma   = 0;
+            h->mb.i_cbp_chroma = 0;
+            h->mb.b_transform_8x8 = 0;
+            h->mb.b_skip_mc = 0;
+
+            if( b_interior )
+            {
+                h->mb.i_type = P_SKIP;
+                x264_macroblock_cache_mv_ptr( h, 0, 0, 4, 4, 0, zero_mv );
+            }
+            else
+            {
+                h->mb.i_type = P_L0;
+                h->mb.b_allow_skip = 0;
+                x264_macroblock_cache_mv_ptr( h, 0, 0, 4, 4, 0, zero_mv );
+            }
+            b_pskip_bypass_mb = 1;
+            i_pskip_bypass_type = h->mb.i_type;
+
+            x264_macroblock_cache_ref( h, 0, 0, 4, 4, 0, 0 );
+            memset( h->mb.cache.non_zero_count, 0, sizeof( h->mb.cache.non_zero_count ) );
+
+            goto reencode;
+        }
         x264_macroblock_analyse( h );
 
         /* encode this macroblock -> be careful it can change the mb type to P_SKIP if needed */
 reencode:
         x264_macroblock_encode( h );
+        if( b_pskip_bypass_mb )
+        {
+            assert( h->mb.i_partition == D_16x16 );
+            assert( h->mb.cache.ref[0][x264_scan8[0]] == 0 );
+            assert( !(h->mb.i_cbp_luma | h->mb.i_cbp_chroma) );
+            if( i_pskip_bypass_type == P_SKIP )
+            {
+                assert( h->mb.i_type == P_SKIP );
+                assert( !M32( h->mb.cache.mv[0][x264_scan8[0]] ) );
+            }
+            else
+            {
+                assert( h->mb.i_type == P_L0 );
+                assert( !h->mb.b_allow_skip );
+                assert( !M32( h->mb.cache.mv[0][x264_scan8[0]] ) );
+            }
+        }
 
         if( h->param.b_cabac )
         {

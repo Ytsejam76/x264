@@ -1335,7 +1335,13 @@ static ALWAYS_INLINE void macroblock_cache_load( x264_t *h, int mb_x, int mb_y, 
     }
 
     if( h->sh.i_type == SLICE_TYPE_P )
-        x264_mb_predict_mv_pskip( h, h->mb.cache.pskip_mv );
+    {
+        if( h->param.analyse.b_pskip_bypass && h->fdec->mb_info &&
+            (h->fdec->mb_info[h->mb.i_mb_xy] & X264_MBINFO_PERFECT_P_SKIP) )
+            M32( h->mb.cache.pskip_mv ) = 0;
+        else
+            x264_mb_predict_mv_pskip( h, h->mb.cache.pskip_mv );
+    }
 
     h->mb.i_neighbour4[0] =
     h->mb.i_neighbour8[0] = (h->mb.i_neighbour_intra & (MB_TOP|MB_LEFT|MB_TOPLEFT))
@@ -1923,4 +1929,3 @@ void x264_macroblock_bipred_init( x264_t *h )
                 }
             }
 }
-

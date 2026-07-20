@@ -35,6 +35,8 @@ void x264_analyse_free_costs( x264_t *h );
 void x264_analyse_weight_frame( x264_t *h, int end );
 #define x264_macroblock_analyse x264_template(macroblock_analyse)
 void x264_macroblock_analyse( x264_t *h );
+#define x264_macroblock_analyse_init x264_template(macroblock_analyse_init)
+void x264_macroblock_analyse_init( x264_t *h );
 #define x264_slicetype_decide x264_template(slicetype_decide)
 void x264_slicetype_decide( x264_t *h );
 

@@ -2915,6 +2915,23 @@ static inline void mb_analyse_qp_rd( x264_t *h, x264_mb_analysis_t *a )
 /*****************************************************************************
  * x264_macroblock_analyse:
  *****************************************************************************/
+/* Run only the per-MB/per-row init that mb_analyse_init performs (MV clamp
+ * bounds, QP, effective_qp), without the actual mode search. The mb_info P_SKIP
+ * bypass uses this to set up the per-row vertical MV bounds it would otherwise
+ * skip, keeping later normally-coded MBs in the row causally correct. */
+void x264_macroblock_analyse_init( x264_t *h )
+{
+    x264_mb_analysis_t analysis;
+
+    h->mb.i_qp = x264_ratecontrol_mb_qp( h );
+    if( h->param.rc.i_aq_mode && h->param.analyse.i_subpel_refine < 10 )
+        h->mb.i_qp = abs(h->mb.i_qp - h->mb.i_last_qp) == 1 ? h->mb.i_last_qp : h->mb.i_qp;
+
+    if( h->param.analyse.b_mb_info )
+        h->fdec->effective_qp[h->mb.i_mb_xy] = h->mb.i_qp;
+    mb_analyse_init( h, &analysis, h->mb.i_qp );
+}
+
 void x264_macroblock_analyse( x264_t *h )
 {
     x264_mb_analysis_t analysis;
@@ -3892,4 +3909,3 @@ static void analyse_update_cache( x264_t *h, x264_mb_analysis_t *a  )
 }
 
 #include "slicetype.c"
-
