@@ -519,6 +519,21 @@ static void macroblock_encode_skip( x264_t *h )
     h->mb.cbp[h->mb.i_mb_xy] = 0;
 }
 
+void x264_macroblock_encode_p_l0_zero_residual( x264_t *h )
+{
+    assert( h->mb.i_type == P_L0 );
+    assert( h->mb.i_partition == D_16x16 );
+    assert( h->mb.cache.ref[0][x264_scan8[0]] == 0 );
+    assert( !M32( h->mb.cache.mv[0][x264_scan8[0]] ) );
+    assert( !h->mb.b_allow_skip );
+
+    if( !h->mb.b_skip_mc )
+        x264_mb_mc( h );
+
+    macroblock_encode_skip( h );
+    h->mb.i_type = P_L0;
+}
+
 /*****************************************************************************
  * Intra prediction for predictive lossless mode.
  *****************************************************************************/

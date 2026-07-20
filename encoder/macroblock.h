@@ -51,6 +51,8 @@ void x264_predict_lossless_chroma( x264_t *h, int i_mode );
 
 #define x264_macroblock_encode x264_template(macroblock_encode)
 void x264_macroblock_encode      ( x264_t *h );
+#define x264_macroblock_encode_p_l0_zero_residual x264_template(macroblock_encode_p_l0_zero_residual)
+void x264_macroblock_encode_p_l0_zero_residual( x264_t *h );
 #define x264_macroblock_write_cabac x264_template(macroblock_write_cabac)
 void x264_macroblock_write_cabac ( x264_t *h, x264_cabac_t *cb );
 #define x264_macroblock_write_cavlc x264_template(macroblock_write_cavlc)

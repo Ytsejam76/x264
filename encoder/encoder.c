@@ -2953,7 +2953,10 @@ static intptr_t slice_write( x264_t *h )
 
         /* encode this macroblock -> be careful it can change the mb type to P_SKIP if needed */
 reencode:
-        x264_macroblock_encode( h );
+        if( b_pskip_bypass_mb && i_pskip_bypass_type == P_L0 )
+            x264_macroblock_encode_p_l0_zero_residual( h );
+        else
+            x264_macroblock_encode( h );
         if( b_pskip_bypass_mb )
         {
             assert( h->mb.i_partition == D_16x16 );
