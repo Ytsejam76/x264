@@ -58,4 +58,29 @@ run_case chessboard_444_2560x1440      -s chessboard     -c 444 -w 2560 -H 1440 
 echo "== pskip engagement (negative test) =="
 ./test_pskip -N -s none -c 420 -w 1280 -H 720 -n 150 -o reg_negative
 
+# Lite cache-load fast path (ultrafast/CAVLC): the reduced neighbour load for
+# interior static MBs must be bit-exact with the full load. Encode each scenario
+# with the lite path and again with PSKIP_FORCE_FULL_LOAD=1 and require identical
+# .h264. Covers lossless (qp 0) and realistic (qp 23), where the fast path engages.
+echo "== pskip lite cache-load bit-identical A/B (ultrafast) =="
+ab_case() {
+    scen=$1; csp=$2; W=$3; H=$4; qp=$5
+    PSKIP_PRESET=ultrafast ./test_pskip -s "$scen" -c "$csp" -w "$W" -H "$H" -n 24 -q "$qp" -o reg_ab_lite >/dev/null 2>&1
+    PSKIP_PRESET=ultrafast PSKIP_FORCE_FULL_LOAD=1 ./test_pskip -s "$scen" -c "$csp" -w "$W" -H "$H" -n 24 -q "$qp" -o reg_ab_full >/dev/null 2>&1
+    if cmp -s reg_ab_lite_pskip.h264 reg_ab_full_pskip.h264; then
+        echo "  A/B ok: $scen $csp ${W}x${H} qp$qp"
+    else
+        echo "  A/B FAIL: $scen $csp ${W}x${H} qp$qp (lite != full-load bitstream)"
+        exit 1
+    fi
+    rm -rf reg_ab_lite_* reg_ab_full_* reg_ab_lite reg_ab_full 2>/dev/null || true
+}
+for scen in all block4 solid-interior concentrated combo chessboard; do
+    for qp in 0 23; do
+        ab_case "$scen" 420 1280 720 "$qp"
+    done
+done
+ab_case block4 444 1920 1088 0
+ab_case combo 420 2560 1440 23
+
 echo "pskip regression suite passed"
