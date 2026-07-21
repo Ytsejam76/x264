@@ -2799,6 +2799,12 @@ static intptr_t slice_write( x264_t *h )
 #define BS_BAK_ROW_VBV        3
     x264_bs_bak_t bs_bak[4];
     b_deblock &= b_hpel || h->param.b_full_recon || h->param.psz_dump_yuv;
+    /* Lite cache-load fast path for interior static P_SKIP MBs is only valid for
+     * progressive, CAVLC, single-ref P-slices with deblocking off (the ultrafast
+     * target). PSKIP_FORCE_FULL_LOAD=1 forces the full load for bit-identical A/B. */
+    int b_pskip_lite = h->param.analyse.b_pskip_bypass && h->fdec->mb_info &&
+                       h->sh.i_type == SLICE_TYPE_P && !SLICE_MBAFF && !PARAM_INTERLACED &&
+                       !b_deblock && !h->param.b_cabac && !getenv( "PSKIP_FORCE_FULL_LOAD" );
     bs_realign( &h->out.bs );
 
     /* Slice */
@@ -2878,9 +2884,29 @@ static intptr_t slice_write( x264_t *h )
             h->mb.field[mb_xy] = MB_INTERLACED;
         }
 
+        /* Decide interior static P_SKIP eligibility from the mb_info oracle and
+         * geometry alone (no cache reads) so we can pick the lite loader. An
+         * interior MB has its raster left/top neighbours also hinted, matching
+         * the b_interior condition below; boundary MBs (P_L0) keep the full load
+         * because their mvd write reads neighbour motion vectors. */
+        int mb_lite = 0;
+        if( b_pskip_lite && (h->fdec->mb_info[mb_xy] & X264_MBINFO_PERFECT_P_SKIP) )
+        {
+            int left_static = i_mb_x > 0 &&
+                (h->fdec->mb_info[mb_xy - 1] & X264_MBINFO_PERFECT_P_SKIP);
+            int top_static = i_mb_y > 0 &&
+                (h->fdec->mb_info[mb_xy - h->mb.i_mb_width] & X264_MBINFO_PERFECT_P_SKIP);
+            mb_lite = (i_mb_x == 0 && i_mb_y == 0) ||
+                      (i_mb_x == 0 && top_static) ||
+                      (i_mb_y == 0 && left_static) ||
+                      (i_mb_x > 0 && i_mb_y > 0 && left_static && top_static);
+        }
+
         /* load cache */
         if( SLICE_MBAFF )
             x264_macroblock_cache_load_interlaced( h, i_mb_x, i_mb_y );
+        else if( mb_lite )
+            x264_macroblock_cache_load_neighbours_lite( h, i_mb_x, i_mb_y );
         else
             x264_macroblock_cache_load_progressive( h, i_mb_x, i_mb_y );
         int b_pskip_bypass_mb = 0;

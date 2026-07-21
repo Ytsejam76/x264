@@ -1357,6 +1357,60 @@ static ALWAYS_INLINE void macroblock_cache_load( x264_t *h, int mb_x, int mb_y, 
                             | ((h->mb.i_neighbour_intra & MB_TOP) ? MB_TOP|MB_TOPLEFT : 0);
 }
 
+/* Reduced cache load for the mb_info perfect-P_SKIP bypass on interior static
+ * MBs (progressive, single-ref, CAVLC, deblocking off). Such a macroblock is
+ * forced to P_SKIP with mv=0/ref=0 and codes no residual, so the neighbour
+ * non-zero-count, intra-pred-mode, cbp, ref/mv and mvd loads that the full
+ * macroblock_cache_load performs are dead: they are read only by residual/mvd
+ * coding (not emitted here), intra analysis (skipped), or deblocking (off).
+ * We keep only what the skip encode and cache_save need: the neighbour index
+ * geometry, the reconstructed-picture pointers / motion-comp setup, b_allow_skip,
+ * and the forced-zero P_SKIP predictor. Must produce a bitstream byte-identical
+ * to the full load; the caller gates this on the exact regime above. */
+void x264_macroblock_cache_load_neighbours_lite( x264_t *h, int mb_x, int mb_y )
+{
+    macroblock_cache_load_neighbours( h, mb_x, mb_y, 0 );
+
+    h->mb.cache.deblock_strength = h->deblock_strength[mb_y&1][h->param.b_sliced_threads?h->mb.i_mb_xy:mb_x];
+
+    x264_copy_column8( h->mb.pic.p_fdec[0]-1+ 4*FDEC_STRIDE, h->mb.pic.p_fdec[0]+15+ 4*FDEC_STRIDE );
+    x264_copy_column8( h->mb.pic.p_fdec[0]-1+12*FDEC_STRIDE, h->mb.pic.p_fdec[0]+15+12*FDEC_STRIDE );
+    macroblock_load_pic_pointers( h, mb_x, mb_y, 0, 0, 0 );
+    if( CHROMA444 )
+    {
+        x264_copy_column8( h->mb.pic.p_fdec[1]-1+ 4*FDEC_STRIDE, h->mb.pic.p_fdec[1]+15+ 4*FDEC_STRIDE );
+        x264_copy_column8( h->mb.pic.p_fdec[1]-1+12*FDEC_STRIDE, h->mb.pic.p_fdec[1]+15+12*FDEC_STRIDE );
+        x264_copy_column8( h->mb.pic.p_fdec[2]-1+ 4*FDEC_STRIDE, h->mb.pic.p_fdec[2]+15+ 4*FDEC_STRIDE );
+        x264_copy_column8( h->mb.pic.p_fdec[2]-1+12*FDEC_STRIDE, h->mb.pic.p_fdec[2]+15+12*FDEC_STRIDE );
+        macroblock_load_pic_pointers( h, mb_x, mb_y, 1, 0, 0 );
+        macroblock_load_pic_pointers( h, mb_x, mb_y, 2, 0, 0 );
+    }
+    else if( CHROMA_FORMAT )
+    {
+        x264_copy_column8( h->mb.pic.p_fdec[1]-1+ 4*FDEC_STRIDE, h->mb.pic.p_fdec[1]+ 7+ 4*FDEC_STRIDE );
+        x264_copy_column8( h->mb.pic.p_fdec[2]-1+ 4*FDEC_STRIDE, h->mb.pic.p_fdec[2]+ 7+ 4*FDEC_STRIDE );
+        if( CHROMA_FORMAT == CHROMA_422 )
+        {
+            x264_copy_column8( h->mb.pic.p_fdec[1]-1+12*FDEC_STRIDE, h->mb.pic.p_fdec[1]+ 7+12*FDEC_STRIDE );
+            x264_copy_column8( h->mb.pic.p_fdec[2]-1+12*FDEC_STRIDE, h->mb.pic.p_fdec[2]+ 7+12*FDEC_STRIDE );
+        }
+        macroblock_load_pic_pointers( h, mb_x, mb_y, 1, 1, 0 );
+    }
+
+    if( h->fdec->integral )
+    {
+        int offset = 16 * (mb_x + mb_y * h->fdec->i_stride[0]);
+        for( int i = 0; i < h->mb.pic.i_fref[0]; i++ )
+            h->mb.pic.p_integral[0][i] = &h->fref[0][i]->integral[offset];
+    }
+
+    x264_prefetch_fenc( h, h->fenc, mb_x, mb_y );
+
+    h->mb.b_allow_skip = 1;
+
+    M32( h->mb.cache.pskip_mv ) = 0;
+}
+
 void x264_macroblock_cache_load_progressive( x264_t *h, int mb_x, int mb_y )
 {
     macroblock_cache_load( h, mb_x, mb_y, 0 );

@@ -40,6 +40,7 @@ typedef struct
     const char *out_prefix;
     int bench;       /* encode-only timing, no file/decode I/O */
     int wrong_hint;  /* negative test: hint a changing MB as skippable */
+    int qp;          /* CQP quantizer (0 = lossless, the strongest oracle) */
 } args_t;
 
 typedef struct
@@ -86,6 +87,7 @@ static void parse_args( int argc, char **argv, args_t *a )
     a->out_prefix = "out";
     a->bench = 0;
     a->wrong_hint = 0;
+    a->qp = 0;
 
     for( int i = 1; i < argc; i++ )
     {
@@ -116,12 +118,15 @@ static void parse_args( int argc, char **argv, args_t *a )
             a->bench = 1;
         else if( !strcmp( argv[i], "-N" ) )
             a->wrong_hint = 1;
+        else if( !strcmp( argv[i], "-q" ) && i + 1 < argc )
+            a->qp = atoi( argv[++i] );
         else if( !strcmp( argv[i], "-h" ) || !strcmp( argv[i], "--help" ) )
         {
-            fprintf( stderr, "Usage: %s [-w W] [-H H] [-n frames] [-c 420|444] [-s scenario] [-o prefix] [-B] [-N]\n", argv[0] );
+            fprintf( stderr, "Usage: %s [-w W] [-H H] [-n frames] [-c 420|444] [-s scenario] [-o prefix] [-q QP] [-B] [-N]\n", argv[0] );
             fprintf( stderr, "Scenarios: all, none, edge-boxes, interior-boxes, strips, chessboard,\n" );
             fprintf( stderr, "           block3, block4, bands, cols, solid-interior, isolated,\n" );
             fprintf( stderr, "           lshape, toprow, leftcol, corner, combo\n" );
+            fprintf( stderr, "  -q QP  CQP quantizer (0 = lossless, default)\n" );
             fprintf( stderr, "  -B  bench mode (encode-only, no file/decode I/O)\n" );
             fprintf( stderr, "  -N  negative test (hint a changing MB as skippable; proves the fast path engaged)\n" );
             exit( 0 );
@@ -399,7 +404,7 @@ static void set_params( x264_param_t *p, const args_t *A, int force_pskip, int p
     p->analyse.b_pskip_bypass = force_pskip ? 1 : 0;
     p->analyse.i_weighted_pred = 0;
     p->rc.i_rc_method = X264_RC_CQP;
-    p->rc.i_qp_constant = 0;
+    p->rc.i_qp_constant = A->qp;
     p->rc.i_qp_min = 0;
     p->rc.i_qp_max = 51;
     p->rc.i_lookahead = 0;
@@ -1172,9 +1177,16 @@ int main( int argc, char **argv )
     }
 
     encode_one( &A, out_pskip, 1, 1, &Sp, &mbmaps_pskip, &mbw, &mbh, "pskip" );
-    compare_decoded_outputs( out_reference, out_pskip, A.n );
-    compare_decoded_to_pristine( &A, out_reference );
-    compare_decoded_to_pristine( &A, out_pskip );
+    /* Lossless (QP 0) is the strongest oracle: every stream must decode exactly
+     * to the source, so reference==pskip==source. At lossy QP that no longer
+     * holds -- reference and pskip are different valid bitstreams and neither
+     * equals the source -- so only the MV invariant (checked below) applies. */
+    if( A.qp == 0 )
+    {
+        compare_decoded_outputs( out_reference, out_pskip, A.n );
+        compare_decoded_to_pristine( &A, out_reference );
+        compare_decoded_to_pristine( &A, out_pskip );
+    }
 
     int violations = 0;
 #ifdef AV_CODEC_FLAG2_EXPORT_MVS
@@ -1186,12 +1198,16 @@ int main( int argc, char **argv )
     free( mbmaps_pskip );
 
     printf( "Scenario:   %s\n", A.scenario );
-    printf( "Resolution: %dx%d  CSP:%s  Frames:%d  MBs:%dx%d  QP:lossless\n",
-            A.w, A.h, (A.csp == X264_CSP_I420 ? "I420" : "I444"), A.n, mbw, mbh );
+    printf( "Resolution: %dx%d  CSP:%s  Frames:%d  MBs:%dx%d  QP:%s\n",
+            A.w, A.h, (A.csp == X264_CSP_I420 ? "I420" : "I444"), A.n, mbw, mbh,
+            A.qp == 0 ? "lossless" : "lossy" );
     printf( "Baseline:  time = %.3f s, size = %.1f kB\n", Sb.sec, Sb.bytes / 1024.0 );
     printf( "P_SKIP:    time = %.3f s, size = %.1f kB\n", Sp.sec, Sp.bytes / 1024.0 );
     printf( "Source:     %s\n", out_source );
-    printf( "Decode check: OK against P-only reference and pristine generated sequence\n" );
+    if( A.qp == 0 )
+        printf( "Decode check: OK against P-only reference and pristine generated sequence\n" );
+    else
+        printf( "Decode check: skipped (lossy QP %d); MV invariant enforced below\n", A.qp );
 
     if( violations )
     {
