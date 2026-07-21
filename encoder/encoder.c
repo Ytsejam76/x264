@@ -2884,11 +2884,16 @@ static intptr_t slice_write( x264_t *h )
             h->mb.field[mb_xy] = MB_INTERLACED;
         }
 
-        /* Decide interior static P_SKIP eligibility from the mb_info oracle and
-         * geometry alone (no cache reads) so we can pick the lite loader. An
-         * interior MB has its raster left/top neighbours also hinted, matching
-         * the b_interior condition below; boundary MBs (P_L0) keep the full load
-         * because their mvd write reads neighbour motion vectors. */
+        /* Decide P_SKIP eligibility from the mb_info oracle and geometry alone
+         * (no cache reads) so we can pick the lite loader. This mirrors the
+         * decoder's P_Skip MV derivation (H.264 clause 8.4.1.1): mvL0 is forced
+         * to (0,0) if the left OR top neighbour is unavailable, OR is ref0/mv0.
+         * A hinted-static neighbour always decodes to ref0/mv0, and an
+         * off-frame neighbour is unavailable, so any MB meeting this OR is a
+         * P_SKIP that the decoder reconstructs with mv=0 -- exactly what we
+         * want. Such MBs need no neighbour motion data, so they take the lite
+         * load. Only true-boundary MBs (both neighbours present and non-static)
+         * fall through to P_L0 with the full load for their mvd write. */
         int mb_lite = 0;
         if( b_pskip_lite && (h->fdec->mb_info[mb_xy] & X264_MBINFO_PERFECT_P_SKIP) )
         {
@@ -2896,10 +2901,7 @@ static intptr_t slice_write( x264_t *h )
                 (h->fdec->mb_info[mb_xy - 1] & X264_MBINFO_PERFECT_P_SKIP);
             int top_static = i_mb_y > 0 &&
                 (h->fdec->mb_info[mb_xy - h->mb.i_mb_width] & X264_MBINFO_PERFECT_P_SKIP);
-            mb_lite = (i_mb_x == 0 && i_mb_y == 0) ||
-                      (i_mb_x == 0 && top_static) ||
-                      (i_mb_y == 0 && left_static) ||
-                      (i_mb_x > 0 && i_mb_y > 0 && left_static && top_static);
+            mb_lite = i_mb_x == 0 || i_mb_y == 0 || left_static || top_static;
         }
 
         /* load cache */
@@ -2912,11 +2914,16 @@ static intptr_t slice_write( x264_t *h )
         int b_pskip_bypass_mb = 0;
         int i_pskip_bypass_type = 0;
         /* Ultra-fast P_SKIP bypass driven by mb_info.
-         * Interior blocks can skip directly when their already-encoded left/top
-         * neighbors are also marked static. The map is the oracle that this makes
-         * the decoder's P_SKIP predictor zero. Boundary blocks still encode as
-         * P_L0 with explicit zero motion, but skip promotion is disabled so they
-         * do not get collapsed back to P_SKIP before the oracle condition holds.
+         * A hinted block can be emitted as P_SKIP whenever the decoder's own
+         * P_Skip MV derivation (H.264 clause 8.4.1.1) is guaranteed to produce
+         * mv=(0,0): that holds when the left OR top neighbour is unavailable
+         * (frame edge) OR is ref0/mv0 -- and a hinted-static neighbour always
+         * decodes to ref0/mv0. This is an OR, matching the standard; the older
+         * (left && top) test was needlessly conservative. Blocks that don't meet
+         * it (a true boundary with non-static content on both present sides) are
+         * still emitted as P_L0 with explicit zero motion, and skip promotion is
+         * disabled for them so they are not collapsed back to a P_SKIP whose
+         * decoder predictor could be nonzero.
          */
         if( h->param.analyse.b_pskip_bypass && h->fdec->mb_info &&
             h->sh.i_type == SLICE_TYPE_P &&
@@ -2936,10 +2943,7 @@ static intptr_t slice_write( x264_t *h )
             const int b_interior =
                 h->mb.b_allow_skip &&
                 !skip_invalid &&
-                ((mb_x == 0 && mb_y == 0) ||
-                 (mb_x == 0 && top_static) ||
-                 (mb_y == 0 && left_static) ||
-                 (mb_x > 0 && mb_y > 0 && left_static && top_static));
+                (mb_x == 0 || mb_y == 0 || left_static || top_static);
             int16_t zero_mv[2] = {0, 0};
 
             /* mb_analyse_init sets the per-row vertical MV clamp bounds (only at
