@@ -2945,7 +2945,6 @@ static intptr_t slice_write( x264_t *h )
             i_pskip_bypass_type = h->mb.i_type;
 
             x264_macroblock_cache_ref( h, 0, 0, 4, 4, 0, 0 );
-            memset( h->mb.cache.non_zero_count, 0, sizeof( h->mb.cache.non_zero_count ) );
 
             goto reencode;
         }
