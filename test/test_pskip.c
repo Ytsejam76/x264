@@ -125,7 +125,7 @@ static void parse_args( int argc, char **argv, args_t *a )
             fprintf( stderr, "Usage: %s [-w W] [-H H] [-n frames] [-c 420|444] [-s scenario] [-o prefix] [-q QP] [-B] [-N]\n", argv[0] );
             fprintf( stderr, "Scenarios: all, none, edge-boxes, interior-boxes, strips, chessboard,\n" );
             fprintf( stderr, "           block3, block4, bands, cols, solid-interior, isolated,\n" );
-            fprintf( stderr, "           lshape, toprow, leftcol, corner, combo\n" );
+            fprintf( stderr, "           lshape, toprow, leftcol, corner, combo, concentrated, desktop\n" );
             fprintf( stderr, "  -q QP  CQP quantizer (0 = lossless, default)\n" );
             fprintf( stderr, "  -B  bench mode (encode-only, no file/decode I/O)\n" );
             fprintf( stderr, "  -N  negative test (hint a changing MB as skippable; proves the fast path engaged)\n" );
@@ -194,6 +194,10 @@ static int mb_is_static( const char *scenario, int mb_x, int mb_y, int mbw, int 
                         X264_MIN( 5 + X264_MAX( mbh / 3, 3 ), mbh ) );
     if( streq( scenario, "concentrated" ) ) /* one solid block covering ~half the frame */
         return in_rect( mb_x, mb_y, 0, 0, mbw, mbh / 2 );
+    if( streq( scenario, "desktop" ) )      /* mostly static; one small changing tile (~video/cursor) */
+        return !in_rect( mb_x, mb_y, mbw * 3 / 5, mbh * 3 / 5,
+                         X264_MIN( mbw * 3 / 5 + mbw / 5, mbw ),
+                         X264_MIN( mbh * 3 / 5 + mbh / 5, mbh ) );
     if( streq( scenario, "isolated" ) )     /* one interior hinted MB in moving content: boundary path */
         return mb_x == mbw / 2 && mb_y == mbh / 2;
     if( streq( scenario, "lshape" ) )       /* hinted left column + top row of an interior block */

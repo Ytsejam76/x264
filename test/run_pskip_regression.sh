@@ -42,6 +42,7 @@ run_case toprow_420_1280x720           -s toprow         -c 420 -w 1280 -H 720  
 run_case leftcol_420_1280x720          -s leftcol        -c 420 -w 1280 -H 720  -n 150
 run_case corner_420_1280x720           -s corner         -c 420 -w 1280 -H 720  -n 150
 run_case combo_420_1280x720            -s combo          -c 420 -w 1280 -H 720  -n 150
+run_case desktop_420_1280x720          -s desktop        -c 420 -w 1280 -H 720  -n 150
 # FHD (1920x1088) coverage
 run_case combo_420_1920x1088           -s combo          -c 420 -w 1920 -H 1088 -n 150
 run_case block4_420_1920x1088          -s block4         -c 420 -w 1920 -H 1088 -n 150
@@ -75,7 +76,7 @@ ab_case() {
     fi
     rm -rf reg_ab_lite_* reg_ab_full_* reg_ab_lite reg_ab_full 2>/dev/null || true
 }
-for scen in all block4 solid-interior concentrated combo chessboard; do
+for scen in all block4 solid-interior concentrated combo chessboard desktop; do
     for qp in 0 23; do
         ab_case "$scen" 420 1280 720 "$qp"
     done
