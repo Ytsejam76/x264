@@ -1427,6 +1427,9 @@ static int validate_parameters( x264_t *h, int b_open )
             x264_log( h, X264_LOG_WARNING, "pskip bypass disabled (incompatible with %s)\n", reason );
             h->param.analyse.b_pskip_bypass = 0;
         }
+        else
+            x264_log( h, X264_LOG_INFO, "pskip bypass enabled%s\n",
+                      h->param.analyse.b_mb_info ? "" : " (no effect without mb_info)" );
     }
 
     return 0;
