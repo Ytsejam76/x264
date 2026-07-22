@@ -1403,6 +1403,12 @@ static int validate_parameters( x264_t *h, int b_open )
     BOOLIFY( rc.b_filler );
 #undef BOOLIFY
 
+    /* The perfect P_SKIP bypass is driven entirely by the mb_info map, so it is
+     * meaningless without it: enable mb_info automatically rather than silently
+     * doing nothing. */
+    if( h->param.analyse.b_pskip_bypass )
+        h->param.analyse.b_mb_info = 1;
+
     /* The mb_info-driven perfect P_SKIP bypass is only proven safe for
      * progressive, single-reference P-frames without weighted prediction:
      * that regime guarantees the decoder's P_SKIP predictor is zero for hinted
@@ -1428,8 +1434,7 @@ static int validate_parameters( x264_t *h, int b_open )
             h->param.analyse.b_pskip_bypass = 0;
         }
         else
-            x264_log( h, X264_LOG_INFO, "pskip bypass enabled%s\n",
-                      h->param.analyse.b_mb_info ? "" : " (no effect without mb_info)" );
+            x264_log( h, X264_LOG_INFO, "pskip bypass enabled\n" );
     }
 
     return 0;

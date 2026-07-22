@@ -1297,6 +1297,10 @@ REALIGN_STACK int x264_param_parse( x264_param_t *p, const char *name, const cha
         p->analyse.i_trellis = atoi(value);
     OPT("fast-pskip")
         p->analyse.b_fast_pskip = atobool(value);
+    OPT("mb-info")
+        p->analyse.b_mb_info = atobool(value);
+    OPT("pskip-bypass")
+        p->analyse.b_pskip_bypass = atobool(value);
     OPT("dct-decimate")
         p->analyse.b_dct_decimate = atobool(value);
     OPT("deadzone-inter")
